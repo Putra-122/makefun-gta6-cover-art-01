@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neon Coast — GTA 6 Cover Studio</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">NC</span>
+    <div>
+      <h1>NEON COAST</h1>
+      <p>GTA 6 Cover Studio &mdash; turn your photo into poster art</p>
+    </div>
+  </div>
+  <p class="offline-note">100% offline &mdash; your photo never leaves this page.</p>
+</header>
+
+<main class="studio">
+  <section class="preview-pane">
+    <div class="canvas-frame"><canvas id="stage" width="1080" height="1080"></canvas></div>
+    <p class="preview-hint">Live preview &mdash; what you see is the PNG you export.</p>
+  </section>
+
+  <section class="controls">
+    <div class="group">
+      <h2>1 &middot; Photo</h2>
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept="image/*" hidden>
+        <span class="drop-text">Drop a photo here or click to upload</span>
+      </label>
+      <div class="samples">
+        <span>Or try a sample:</span>
+        <button type="button" data-sample="samples/pier.jpg">Pier sunset</button>
+        <button type="button" data-sample="samples/boulevard.jpg">Boulevard</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>2 &middot; Words</h2>
+      <label>Title
+        <input type="text" id="caption" maxlength="24" value="SUNSET HEIST" autocomplete="off">
+      </label>
+      <label>Subtitle
+        <input type="text" id="subtitle" maxlength="40" value="welcome to vice city" autocomplete="off">
+      </label>
+    </div>
+
+    <div class="group">
+      <h2>3 &middot; Layout</h2>
+      <div class="pills" id="layouts">
+        <button type="button" data-layout="grid" class="on">Four-panel grid</button>
+        <button type="button" data-layout="hero">Hero + three</button>
+        <button type="button" data-layout="bleed">Full-bleed</button>
+        <button type="button" data-layout="tilt">Tilted snapshot</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>4 &middot; Grade</h2>
+      <div class="pills" id="grades">
+        <button type="button" data-grade="sunset" class="on">Vice Sunset</button>
+        <button type="button" data-grade="neon">Neon Night</button>
+        <button type="button" data-grade="palm">Palm Heat</button>
+        <button type="button" data-grade="drive">Ocean Drive</button>
+        <button type="button" data-grade="noir">Mono Noir</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h2>5 &middot; Export size</h2>
+      <div class="pills" id="sizes">
+        <button type="button" data-size="1080x1080" class="on">Square 1080&times;1080</button>
+        <button type="button" data-size="1080x1350">Portrait 1080&times;1350</button>
+        <button type="button" data-size="1920x1080">Wide 1920&times;1080</button>
+      </div>
+      <button type="button" id="export" class="export">Export PNG</button>
+      <p class="export-note" id="export-note">Ready.</p>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <p>Made for the GTA 6 launch week. Not affiliated with Rockstar Games. No photos are uploaded anywhere.</p>
+</footer>
+
+<script type="module" src="src/boot.js"></script>
+</body>
+</html>
