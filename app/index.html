@@ -3,81 +3,88 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Neon Coast Cover Studio — GTA 6-style cover art maker</title>
+<title>Neon Coast Cover Studio — GTA 6-style cover art, offline</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="brand"><span class="mark">NC</span>
+<canvas id="shot" width="1080" height="1080" hidden></canvas>
+<header class="top">
+  <div class="brand"><span class="logo">NC</span>
     <div>
       <h1>Neon Coast Cover Studio</h1>
       <p>Turn a photo and a caption into GTA 6-style poster cover art.</p>
     </div>
   </div>
-  <p class="offline">RUNS FULLY OFFLINE &middot; PHOTOS NEVER LEAVE THIS MACHINE</p>
+  <p class="offline">Runs fully offline · Photos never leave this machine</p>
 </header>
 
-<main class="workbench">
-  <section class="preview-col">
-    <div class="canvas-wrap">
-      <canvas id="stage" width="1080" height="1080"></canvas>
-    </div>
-    <p id="sizeLine" class="size-line">1080 &times; 1080 &middot; hero &middot; neon</p>
+<main class="layout">
+  <section class="stage">
+    <canvas id="cover" width="1080" height="1080"></canvas>
+    <p id="meta" class="meta">1080 × 1080 · Grid 2×2 · Vice Sunset</p>
   </section>
 
-  <aside class="controls">
-    <section class="card">
-      <h2>1 &middot; Photo</h2>
-      <div class="panels">
-        <button type="button" class="panel" id="panel-0" aria-label="Panel 1"><span>Panel 1</span></button>
-        <button type="button" class="panel" id="panel-1" aria-label="Panel 2"><span>Panel 2</span></button>
-        <button type="button" class="panel" id="panel-2" aria-label="Panel 3"><span>Panel 3</span></button>
-        <button type="button" class="panel" id="panel-3" aria-label="Panel 4"><span>Panel 4</span></button>
+  <aside class="panel">
+    <section>
+      <h2>1 · Photo</h2>
+      <div class="slots">
+        <button class="slot active" data-slot="0"><img alt=""><span class="slot-label">Panel 1</span></button>
+        <button class="slot" data-slot="1"><img alt=""><span class="slot-label">Panel 2</span></button>
+        <button class="slot" data-slot="2"><img alt=""><span class="slot-label">Panel 3</span></button>
+        <button class="slot" data-slot="3"><img alt=""><span class="slot-label">Panel 4</span></button>
       </div>
-      <p class="hint">Click a panel, then pick a photo &mdash; it fills that panel. Drag the cover to move a photo, or use the zoom slider.</p>
-      <div class="btn-row">
-        <button type="button" class="btn" id="uploadBtn">Upload photo</button>
-        <button type="button" class="btn ghost" id="sampleBoulevard">Sample: Boulevard</button>
-        <button type="button" class="btn ghost" id="samplePier">Sample: Pier</button>
-        <button type="button" class="btn ghost" id="clearBtn">Clear</button>
+      <p class="hint">Click a panel, then pick a photo — it fills that panel. Drag the cover to move a photo, or use the zoom slider.</p>
+      <div class="row">
+        <label class="btn">Upload photo<input id="upload" type="file" accept="image/*" hidden></label>
+        <button class="btn" data-sample="samples/boulevard.jpg">Sample: Boulevard</button>
+        <button class="btn" data-sample="samples/pier.jpg">Sample: Pier</button>
+        <button class="btn" id="clear">Clear</button>
       </div>
-      <label class="zoom-label" for="zoomRange">Zoom selected panel</label>
-      <input type="range" id="zoomRange" min="1" max="2.5" step="0.05" value="1">
-      <input type="file" id="fileInput" accept="image/*" hidden>
+      <label class="slider-label">Zoom selected panel
+        <input id="zoom" type="range" min="1" max="2.5" step="0.05" value="1">
+      </label>
       <p class="hint">No photo? The app paints a procedural Vice City sunset instead.</p>
     </section>
 
-    <section class="card">
-      <h2>2 &middot; Caption</h2>
-      <label for="titleInput">Title</label>
-      <input type="text" id="titleInput" value="SUNSET HEIST" maxlength="32" autocomplete="off">
-      <label for="subInput">Subtitle</label>
-      <input type="text" id="subInput" value="Leonida Nights" maxlength="48" autocomplete="off">
+    <section>
+      <h2>2 · Caption</h2>
+      <label>Title<input id="title" type="text" value="SUNSET HEIST" maxlength="24"></label>
+      <label>Subtitle<input id="subtitle" type="text" value="Leonida Nights" maxlength="32"></label>
     </section>
 
-    <section class="card">
-      <h2>3 &middot; Layout</h2>
-      <div class="chip-row" id="layoutRow"></div>
+    <section>
+      <h2>3 · Layout</h2>
+      <div class="row">
+        <button class="btn active" data-layout="grid">Grid 2×2</button>
+        <button class="btn" data-layout="hero">Hero</button>
+        <button class="btn" data-layout="bleed">Full bleed</button>
+        <button class="btn" data-layout="tilt">Tilt polaroid</button>
+      </div>
     </section>
 
-    <section class="card">
-      <h2>4 &middot; Colour grade</h2>
-      <div class="chip-row" id="gradeRow"></div>
+    <section>
+      <h2>4 · Grade</h2>
+      <div class="row">
+        <button class="btn active" data-grade="sunset">Vice Sunset</button>
+        <button class="btn" data-grade="neon">Neon Night</button>
+        <button class="btn" data-grade="palm">Palm Heat</button>
+        <button class="btn" data-grade="ocean">Ocean Drive</button>
+        <button class="btn" data-grade="noir">Mono Noir</button>
+      </div>
     </section>
 
-    <section class="card">
-      <h2>5 &middot; Export size</h2>
-      <div class="chip-row" id="sizeRow"></div>
-      <button type="button" class="btn primary" id="exportBtn">Export PNG</button>
+    <section>
+      <h2>5 · Export</h2>
+      <div class="row">
+        <button class="btn active" data-size="square">1080 × 1080</button>
+        <button class="btn" data-size="portrait">1080 × 1350</button>
+        <button class="btn" data-size="wide">1920 × 1080</button>
+      </div>
+      <button class="btn primary" id="export">Export PNG</button>
     </section>
   </aside>
 </main>
 
-<footer class="statusbar"><span id="statusLine">Loading&hellip;</span></footer>
-
-<script src="src/cover.js"></script>
-<script src="src/main.js"></script>
-<script src="src/shots.js"></script>
-<script src="src/boot.js"></script>
+<script type="module" src="src/boot.js"></script>
 </body>
 </html>

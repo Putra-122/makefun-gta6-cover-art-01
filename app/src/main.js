@@ -1,248 +1,175 @@
-// Neon Coast Cover Studio — editor wiring (classic script, no modules).
-// Owns the editor state, binds every control, paints the live preview and
-// exports the finished cover as a PNG. Photos never leave the machine:
-// uploads are read with FileReader, samples are files under app/samples/.
-(function () {
-  "use strict";
+// Neon Coast Cover Studio — editor wiring.
+// State lives in one object; every control change re-renders the preview.
+// Photos never leave the machine: FileReader data URLs, no network calls.
 
-  var $ = function (id) { return document.getElementById(id); };
+import { renderCover, GRADES, LAYOUTS } from './cover.js';
 
-  var state = {
+export const SIZES = {
+  square: { label: 'Square 1080 × 1080', width: 1080, height: 1080 },
+  portrait: { label: 'Portrait 1080 × 1350', width: 1080, height: 1350 },
+  wide: { label: 'Wide 1920 × 1080', width: 1920, height: 1080 },
+};
+
+const SAMPLES = [
+  { name: 'Boulevard', src: 'samples/boulevard.jpg' },
+  { name: 'Pier', src: 'samples/pier.jpg' },
+];
+
+export function createStudio(root) {
+  const state = {
     photos: [null, null, null, null],
-    pans: [{ x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }],
-    zooms: [1, 1, 1, 1],
-    title: "SUNSET HEIST",
-    subtitle: "Leonida Nights",
-    layout: "quad",
-    grade: "vice",
-    size: "square",
-    seed: 20261120,
     selected: 0,
+    layout: 'grid',
+    grade: 'sunset',
+    title: 'SUNSET HEIST',
+    subtitle: 'Leonida Nights',
+    size: 'square',
+    seed: 7,
   };
 
-  var stage = null;
-  var drag = null;
+  const canvas = root.querySelector('#cover');
+  const $ = (sel) => root.querySelector(sel);
 
-  // ------------------------------------------------------------ painting
-  function paint() {
-    if (!stage) return;
-    // preview canvas follows the chosen export size, scaled by CSS
-    var size = CoverArt.SIZES[state.size];
-    if (stage.width !== size.w || stage.height !== size.h) {
-      stage.width = size.w;
-      stage.height = size.h;
-    }
-    CoverArt.drawCover(stage, state);
-    paintThumbs();
-    var line = $("sizeLine");
-    if (line) {
-      line.textContent = size.name + " · " + CoverArt.LAYOUTS[state.layout].name.toLowerCase() +
-        " · " + CoverArt.GRADES[state.grade].name.toLowerCase();
-    }
+  function currentPhoto() {
+    return state.photos[state.selected];
   }
 
-  function paintThumbs() {
-    for (var i = 0; i < 4; i++) {
-      var thumb = $("panel-" + i);
-      if (!thumb) continue;
-      thumb.classList.toggle("active", state.selected === i);
-      thumb.classList.toggle("empty", !state.photos[i]);
-      var label = thumb.querySelector("span");
-      if (label) label.style.display = state.photos[i] ? "none" : "";
-      var img = thumb.querySelector("img");
-      if (state.photos[i]) {
-        if (!img) {
-          img = document.createElement("img");
-          thumb.appendChild(img);
-        }
-        if (img.src !== state.photos[i].src) img.src = state.photos[i].src;
-      } else if (img) {
-        img.remove();
+  function loadImage(src) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('could not load image'));
+      img.src = src;
+    });
+  }
+
+  async function setPhoto(slot, src) {
+    const img = await loadImage(src);
+    state.photos[slot] = { img, zoom: 1, dx: 0, dy: 0 };
+    render();
+  }
+
+  function render() {
+    const size = SIZES[state.size];
+    renderCover(canvas, {
+      photos: state.photos,
+      layout: state.layout,
+      grade: state.grade,
+      title: state.title,
+      subtitle: state.subtitle,
+      seed: state.seed,
+      width: size.width,
+      height: size.height,
+    });
+    const meta = $('#meta');
+    if (meta) meta.textContent = `${size.width} × ${size.height} · ${LAYOUTS[state.layout]} · ${GRADES[state.grade].label}`;
+    refreshSlots();
+  }
+
+  function refreshSlots() {
+    root.querySelectorAll('[data-slot]').forEach((el) => {
+      const i = Number(el.dataset.slot);
+      el.classList.toggle('active', i === state.selected);
+      const thumb = el.querySelector('img');
+      const label = el.querySelector('.slot-label');
+      const photo = state.photos[i];
+      if (photo) {
+        if (thumb) { thumb.src = photo.img.src; thumb.style.display = ''; }
+        if (label) label.style.display = 'none';
+      } else {
+        if (thumb) thumb.style.display = 'none';
+        if (label) label.style.display = '';
       }
-    }
-  }
-
-  // -------------------------------------------------------------- panels
-  function loadImage(src, done) {
-    var img = new Image();
-    img.onload = function () { done(img); };
-    img.onerror = function () { done(null); };
-    img.src = src;
-  }
-
-  function fillPanel(i, src) {
-    loadImage(src, function (img) {
-      if (!img) { setStatus("Could not load that photo."); return; }
-      state.photos[i] = img;
-      state.pans[i] = { x: 0.5, y: 0.5 };
-      state.zooms[i] = 1;
-      state.selected = i;
-      paint();
-      setStatus("Panel " + (i + 1) + " filled.");
     });
   }
 
-  function pickSample(name) {
-    fillPanel(state.selected, "samples/" + name + ".jpg");
-  }
-
-  function clearPanel() {
-    state.photos[state.selected] = null;
-    state.pans[state.selected] = { x: 0.5, y: 0.5 };
-    state.zooms[state.selected] = 1;
-    paint();
-    setStatus("Panel " + (state.selected + 1) + " cleared — procedural sunset instead.");
-  }
-
-  function panelAt(px, py) {
-    var rect = stage.getBoundingClientRect();
-    var x = (px - rect.left) * (stage.width / rect.width);
-    var y = (py - rect.top) * (stage.height / rect.height);
-    var geo = CoverArt.layoutRects(state.layout, stage.width, stage.height);
-    for (var i = 0; i < 4; i++) {
-      var r = geo.panels[i];
-      if (r.w > 0 && x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return i;
-    }
-    return -1;
-  }
-
-  function bindPointer() {
-    stage.addEventListener("pointerdown", function (ev) {
-      var i = panelAt(ev.clientX, ev.clientY);
-      if (i < 0) return;
-      state.selected = i;
-      paintThumbs();
-      if (!state.photos[i]) return;
-      drag = { i: i, x: ev.clientX, y: ev.clientY, pan: { x: state.pans[i].x, y: state.pans[i].y } };
-      stage.setPointerCapture(ev.pointerId);
+  function bind() {
+    // Photo slots: click to select, drag on the cover to pan the selected photo.
+    root.querySelectorAll('[data-slot]').forEach((el) => {
+      el.addEventListener('click', () => { state.selected = Number(el.dataset.slot); render(); });
     });
-    stage.addEventListener("pointermove", function (ev) {
-      if (!drag) return;
-      var rect = stage.getBoundingClientRect();
-      var geo = CoverArt.layoutRects(state.layout, stage.width, stage.height);
-      var r = geo.panels[drag.i];
-      var dx = (ev.clientX - drag.x) * (stage.width / rect.width) / Math.max(1, r.w);
-      var dy = (ev.clientY - drag.y) * (stage.height / rect.height) / Math.max(1, r.h);
-      state.pans[drag.i] = {
-        x: Math.min(1, Math.max(0, drag.pan.x - dx)),
-        y: Math.min(1, Math.max(0, drag.pan.y - dy)),
-      };
-      paint();
+    let dragging = false, lastX = 0, lastY = 0;
+    canvas.addEventListener('pointerdown', (e) => { dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId); });
+    canvas.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const photo = currentPhoto();
+      if (!photo) return;
+      photo.dx += (e.clientX - lastX) / canvas.clientWidth;
+      photo.dy += (e.clientY - lastY) / canvas.clientHeight;
+      lastX = e.clientX; lastY = e.clientY;
+      render();
     });
-    stage.addEventListener("pointerup", function () { drag = null; });
-    stage.addEventListener("pointercancel", function () { drag = null; });
-  }
+    canvas.addEventListener('pointerup', () => { dragging = false; });
 
-  // -------------------------------------------------------------- export
-  function exportPNG() {
-    var size = CoverArt.SIZES[state.size];
-    var off = document.createElement("canvas");
-    off.width = size.w;
-    off.height = size.h;
-    CoverArt.drawCover(off, state);
-    setStatus("Exporting " + size.name + "…");
-    off.toBlob(function (blob) {
-      if (!blob) { setStatus("Export failed in this browser."); return; }
-      var a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      var slug = state.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "cover";
-      a.download = "neon-coast-" + slug + "-" + size.w + "x" + size.h + ".png";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
-      setStatus("Exported " + size.name + " PNG.");
-    }, "image/png");
-  }
+    const zoom = $('#zoom');
+    if (zoom) zoom.addEventListener('input', () => {
+      const photo = currentPhoto();
+      if (photo) { photo.zoom = Number(zoom.value); render(); }
+    });
 
-  function setStatus(msg) {
-    var el = $("statusLine");
-    if (el) el.textContent = msg;
-  }
+    const file = $('#upload');
+    if (file) file.addEventListener('change', () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      const reader = new FileReader();
+      reader.onload = () => setPhoto(state.selected, String(reader.result));
+      reader.readAsDataURL(f);
+    });
 
-  // ------------------------------------------------------------ option rows
-  function buildOptions(rowId, items, current, onPick) {
-    var row = $(rowId);
-    if (!row) return;
-    row.innerHTML = "";
-    Object.keys(items).forEach(function (key) {
-      var b = document.createElement("button");
-      b.type = "button";
-      b.className = "chip" + (key === current ? " on" : "");
-      b.textContent = items[key].name;
-      b.dataset.value = key;
-      b.addEventListener("click", function () {
-        onPick(key);
-        Array.prototype.forEach.call(row.children, function (c) {
-          c.classList.toggle("on", c.dataset.value === key);
-        });
+    root.querySelectorAll('[data-sample]').forEach((el) => {
+      el.addEventListener('click', () => setPhoto(state.selected, el.dataset.sample));
+    });
+    const clear = $('#clear');
+    if (clear) clear.addEventListener('click', () => { state.photos[state.selected] = null; render(); });
+
+    const title = $('#title');
+    if (title) title.addEventListener('input', () => { state.title = title.value; render(); });
+    const subtitle = $('#subtitle');
+    if (subtitle) subtitle.addEventListener('input', () => { state.subtitle = subtitle.value; render(); });
+
+    root.querySelectorAll('[data-layout]').forEach((el) => {
+      el.addEventListener('click', () => {
+        state.layout = el.dataset.layout;
+        root.querySelectorAll('[data-layout]').forEach((b) => b.classList.toggle('active', b === el));
+        render();
       });
-      row.appendChild(b);
     });
-  }
-
-  function refreshOptions() {
-    buildOptions("layoutRow", CoverArt.LAYOUTS, state.layout, function (k) { state.layout = k; paint(); });
-    buildOptions("gradeRow", CoverArt.GRADES, state.grade, function (k) { state.grade = k; paint(); });
-    buildOptions("sizeRow", CoverArt.SIZES, state.size, function (k) { state.size = k; paint(); });
-  }
-
-  // ------------------------------------------------------------------ boot
-  function init() {
-    stage = $("stage");
-    if (!stage || !window.CoverArt) return;
-    refreshOptions();
-
-    $("titleInput").addEventListener("input", function (ev) {
-      state.title = ev.target.value;
-      paint();
-    });
-    $("subInput").addEventListener("input", function (ev) {
-      state.subtitle = ev.target.value;
-      paint();
-    });
-    $("zoomRange").addEventListener("input", function (ev) {
-      state.zooms[state.selected] = parseFloat(ev.target.value) || 1;
-      paint();
-    });
-    $("uploadBtn").addEventListener("click", function () { $("fileInput").click(); });
-    $("fileInput").addEventListener("change", function (ev) {
-      var file = ev.target.files && ev.target.files[0];
-      if (!file) return;
-      var reader = new FileReader();
-      reader.onload = function () { fillPanel(state.selected, reader.result); };
-      reader.readAsDataURL(file);
-      ev.target.value = "";
-    });
-    $("sampleBoulevard").addEventListener("click", function () { pickSample("boulevard"); });
-    $("samplePier").addEventListener("click", function () { pickSample("pier"); });
-    $("clearBtn").addEventListener("click", clearPanel);
-    $("exportBtn").addEventListener("click", exportPNG);
-    for (var i = 0; i < 4; i++) {
-      (function (n) {
-        $("panel-" + n).addEventListener("click", function () {
-          state.selected = n;
-          $("zoomRange").value = String(state.zooms[n]);
-          paintThumbs();
-        });
-      })(i);
-    }
-    bindPointer();
-
-    // Start with the two kit samples so the first paint already shows art.
-    // In shot mode (?shot=) boot.js stages its own photos instead.
-    if (!window.__shotMode) {
-      loadImage("samples/boulevard.jpg", function (img) {
-        if (img) { state.photos[0] = img; paint(); }
+    root.querySelectorAll('[data-grade]').forEach((el) => {
+      el.addEventListener('click', () => {
+        state.grade = el.dataset.grade;
+        root.querySelectorAll('[data-grade]').forEach((b) => b.classList.toggle('active', b === el));
+        render();
       });
-      loadImage("samples/pier.jpg", function (img) {
-        if (img) { state.photos[1] = img; paint(); }
+    });
+    root.querySelectorAll('[data-size]').forEach((el) => {
+      el.addEventListener('click', () => {
+        state.size = el.dataset.size;
+        root.querySelectorAll('[data-size]').forEach((b) => b.classList.toggle('active', b === el));
+        render();
       });
-    }
-    paint();
-    setStatus("Runs fully offline — photos never leave this machine.");
+    });
+
+    const exportBtn = $('#export');
+    if (exportBtn) exportBtn.addEventListener('click', () => {
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `neon-coast-${state.layout}-${SIZES[state.size].width}x${SIZES[state.size].height}.png`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      }, 'image/png');
+    });
   }
 
-  window.NeonCoast = { state: state, paint: paint, init: init, exportPNG: exportPNG };
-  document.addEventListener("DOMContentLoaded", init);
-})();
+  async function start() {
+    bind();
+    // Preload the first sample into panel 1 and the second into panel 2,
+    // so the editor opens with a real cover instead of an empty grid.
+    try { await setPhoto(0, SAMPLES[0].src); } catch { /* keep the sunset fallback */ }
+    try { await setPhoto(1, SAMPLES[1].src); } catch { /* keep the sunset fallback */ }
+    render();
+  }
+
+  return { state, render, setPhoto, start };
+}
