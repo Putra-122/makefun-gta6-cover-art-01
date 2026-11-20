@@ -1,64 +1,77 @@
-// Screenshot scene: ?shot=cover draws one exported-style cover across
-// the whole window, so the screenshot is the cover itself, not a page
-// around it. The query carries the photo, caption, layout and grade.
-import { GRADES, LAYOUTS, renderCover } from './cover.js';
+// Neon Coast Cover Studio — screenshot scenes (classic script).
+// Each shot is a preset state for one screenshot: which layout, grade,
+// caption and photos it shows. boot.js applies the shot named by ?shot=.
+// The photos are the kit's own samples (free to use) or procedural scenes.
+(function () {
+  "use strict";
 
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error(`cannot load ${src}`));
-    img.src = src;
-  });
-}
+  var SHOTS = {
+    cover: {
+      coverMode: true,
+      width: 1080, height: 1080,
+      title: "SUNSET HEIST",
+      subtitle: "Leonida Nights",
+      layout: "quad",
+      grade: "vice",
+      photos: ["boulevard", "pier", null, null],
+      seed: 20261120,
+    },
+    editor: {
+      coverMode: false,
+      width: 1280, height: 800,
+      title: "BOULEVARD QUEEN",
+      subtitle: "Leonida Nights",
+      layout: "hero",
+      grade: "neon",
+      photos: ["boulevard", "pier", "boulevard", "pier"],
+      seed: 20261120,
+    },
+    tilt: {
+      coverMode: true,
+      width: 1024, height: 1280,
+      title: "BOULEVARD QUEEN",
+      subtitle: "Leonida Nights",
+      layout: "tilt",
+      grade: "ocean",
+      photos: ["pier", null, null, null],
+      seed: 20261121,
+    },
+  };
 
-export async function shootCover(query) {
-  document.body.classList.add('shot');
-  const caption = query.get('caption') || 'SUNSET HEIST';
-  const subtitle = query.get('subtitle') || 'Leonida Nights';
-  const layout = LAYOUTS.some((l) => l.id === query.get('layout'))
-    ? query.get('layout') : 'grid';
-  const grade = GRADES.some((g) => g.id === query.get('grade'))
-    ? query.get('grade') : 'sunset';
-
-  // The editor markup is static HTML: drop it so the shot is only the
-  // cover, edge to edge, with nothing above or below it.
-  const canvas = document.createElement('canvas');
-  canvas.id = 'shot-canvas';
-  document.body.replaceChildren(canvas);
-
-  try {
-    await Promise.all([
-      document.fonts.load('900 100px "NeonCoast Black"'),
-      document.fonts.load('700 40px "NeonCoast Bold"'),
-      document.fonts.ready,
-    ]);
-  } catch {
-    // Fallback fonts still render.
+  // Loads a shot's photos (kit samples by name, null = procedural) then
+  // calls done with the filled photo slots. Photos load from app/samples/.
+  function loadShotPhotos(shot, done) {
+    var slots = [null, null, null, null];
+    var pending = 0;
+    shot.photos.forEach(function (name, i) {
+      if (!name) return;
+      pending++;
+      var img = new Image();
+      img.onload = function () { slots[i] = img; if (--pending === 0) done(slots); };
+      img.onerror = function () { if (--pending === 0) done(slots); };
+      img.src = "samples/" + name + ".jpg";
+    });
+    if (pending === 0) done(slots);
   }
 
-  const images = [null, null, null, null];
-  const photo = query.get('photo');
-  if (photo === 'boulevard' || photo === 'pier') {
-    try {
-      const img = await loadImage(`samples/${photo}.jpg`);
-      images[0] = img;
-      images[1] = img;
-      images[2] = img;
-      images[3] = img;
-    } catch {
-      // No photo: the procedural sunset scene covers for it.
-    }
+  // Applies a shot preset to the editor state and returns the shot.
+  function applyShot(name) {
+    var shot = SHOTS[name] || SHOTS.cover;
+    var st = window.NeonCoast.state;
+    st.title = shot.title;
+    st.subtitle = shot.subtitle;
+    st.layout = shot.layout;
+    st.grade = shot.grade;
+    st.seed = shot.seed;
+    st.photos = [null, null, null, null];
+    st.pans = [{ x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.5 }];
+    st.zooms = [1, 1, 1, 1];
+    var titleInput = document.getElementById("titleInput");
+    var subInput = document.getElementById("subInput");
+    if (titleInput) titleInput.value = shot.title;
+    if (subInput) subInput.value = shot.subtitle;
+    return shot;
   }
 
-  renderCover(canvas, {
-    images,
-    caption,
-    subtitle,
-    layout,
-    grade,
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
-  document.title = `cover · ${caption}`;
-}
+  window.CoverShots = { SHOTS: SHOTS, loadShotPhotos: loadShotPhotos, applyShot: applyShot };
+})();

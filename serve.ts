@@ -1,73 +1,44 @@
-// A tiny static server for app/ (Node 22, standard library only), so
-// the entry can be tried locally without a build step:
-//
-//   node serve.ts            serves app/ on http://localhost:8080
-//   node serve.ts --port 8091
-//
-// It sends the MIME types an offline web app needs and refuses any path
-// that escapes app/. A development convenience, not a public server.
-import { createReadStream, statSync } from 'node:fs';
-import { createServer } from 'node:http';
-import { extname, join, normalize, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+// serve.ts — static server for trying the app locally (Node 22 stdlib).
+// Serves app/ at http://localhost:8080 (PORT overrides). No build step,
+// no network: every file it serves is under app/.
+import { createServer } from "node:http";
+import { readFile } from "node:fs/promises";
+import { dirname, extname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const appRoot = resolve(fileURLToPath(new URL('./app', import.meta.url)));
-const portArg = process.argv.indexOf('--port');
-const wanted = portArg === -1 ? 8080 : Number(process.argv[portArg + 1]);
-const port = Number.isInteger(wanted) && wanted > 0 && wanted < 65536 ? wanted : 8080;
-
-const TYPES = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.woff2': 'font/woff2',
-  '.woff': 'font/woff',
-  '.ttf': 'font/ttf',
-  '.otf': 'font/otf',
-  '.wasm': 'application/wasm',
-  '.txt': 'text/plain; charset=utf-8',
+const root = resolve(dirname(fileURLToPath(import.meta.url)), "app");
+const port = Number(process.env.PORT || 8080);
+const MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".ttf": "font/ttf",
 };
 
-const server = createServer((req, res) => {
-  let path;
+const server = createServer(async (req, res) => {
   try {
-    path = decodeURIComponent(new URL(req.url ?? '/', 'http://localhost').pathname);
+    const url = new URL(req.url || "/", "http://localhost");
+    let path = decodeURIComponent(url.pathname);
+    if (path === "/") path = "/index.html";
+    const file = join(root, path);
+    if (!file.startsWith(root)) {
+      res.writeHead(403);
+      res.end("forbidden");
+      return;
+    }
+    const body = await readFile(file);
+    res.writeHead(200, { "content-type": MIME[extname(file)] || "application/octet-stream" });
+    res.end(body);
   } catch {
-    res.writeHead(400).end('bad request');
-    return;
+    res.writeHead(404);
+    res.end("not found");
   }
-  if (path.endsWith('/')) path += 'index.html';
-  const file = resolve(join(appRoot, normalize(path)));
-  if (file !== appRoot && !file.startsWith(appRoot + sep)) {
-    res.writeHead(403).end('forbidden');
-    return;
-  }
-  let size;
-  try {
-    const info = statSync(file);
-    if (!info.isFile()) throw new Error('not a file');
-    size = info.size;
-  } catch {
-    res.writeHead(404).end('not found');
-    return;
-  }
-  res.writeHead(200, {
-    'content-type': TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream',
-    'content-length': size,
-    'cache-control': 'no-store',
-  });
-  createReadStream(file).pipe(res);
 });
 
-server.listen(port, '127.0.0.1', () => {
-  console.log(`app/ is on http://localhost:${port}`);
+server.listen(port, () => {
+  console.log("Neon Coast Cover Studio at http://localhost:" + port);
 });

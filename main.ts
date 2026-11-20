@@ -1,57 +1,25 @@
-// Neon Coast Cover Studio — gta6-cover-art-01 entry program.
-//
-// Hands the app in: copies this directory's app/ and screenshots/ into
-// the output directory and writes dossier.json with the vendored
-// make.fun library (buildDossier). Node 22+, standard library only.
-// Outside the grader, MAKEFUN_OUTPUT_DIR stands in for /output:
-//
-//   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
-//
-// The program is deterministic: same repository, same dossier.json.
+// Neon Coast Cover Studio — entry program (Node 22 stdlib, no deps).
+// Copies app/ and screenshots/ into $MAKEFUN_OUTPUT_DIR (or /output) and
+// writes dossier.json with buildDossier from vendor/makefun-app.ts.
+// It never deletes the output dir: the grader's sandbox owns it, so this
+// program only creates what it needs and overwrites its own files.
+import { cpSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { buildDossier } from "./vendor/makefun-app.ts";
 
-import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { buildDossier } from './vendor/makefun-app.ts';
+const root = dirname(fileURLToPath(import.meta.url));
+const out = process.env.MAKEFUN_OUTPUT_DIR || "/output";
+mkdirSync(out, { recursive: true });
+cpSync(join(root, "app"), join(out, "app"), { recursive: true });
+cpSync(join(root, "screenshots"), join(out, "screenshots"), { recursive: true });
 
-const repoRoot = fileURLToPath(new URL('.', import.meta.url));
-const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
-
-// The scorer's own caps (reference/gate.json). Only text_max_bytes
-// shapes the dossier bytes; the rest refuse an entry the scorer would
-// refuse anyway: more than 4 screenshots or one over 256 KiB, more than
-// 993 files in app/ or 48 MiB of app files in all, or a path under app/
-// longer than 1000 bytes.
-const CAPS = {
+const dossier = buildDossier(out, {
   text_max_bytes: 163840,
   screenshots: { max: 4, max_bytes: 262144 },
   app_max_files: 993,
   app_max_bytes: 50331648,
   app_path_max_bytes: 1000,
-};
-
-function countFiles(dir) {
-  let n = 0;
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    n += entry.isDirectory() ? countFiles(join(dir, entry.name)) : 1;
-  }
-  return n;
-}
-
-mkdirSync(outDir, { recursive: true });
-cpSync(join(repoRoot, 'app'), join(outDir, 'app'), { recursive: true });
-mkdirSync(join(outDir, 'screenshots'), { recursive: true });
-if (existsSync(join(repoRoot, 'screenshots'))) {
-  cpSync(join(repoRoot, 'screenshots'), join(outDir, 'screenshots'), { recursive: true });
-}
-
-const dossier = buildDossier(outDir, CAPS);
-writeFileSync(join(outDir, 'dossier.json'), dossier);
-
-const appFiles = countFiles(join(outDir, 'app'));
-const shots = readdirSync(join(outDir, 'screenshots'))
-  .filter((name) => !name.startsWith('.'))
-  .map((name) => `${name} (${statSync(join(outDir, 'screenshots', name)).size} B)`);
-console.log(`app/: ${appFiles} files`);
-console.log(`screenshots/: ${shots.join(', ')}`);
-console.log(`dossier.json: ${dossier.length} bytes`);
+});
+writeFileSync(join(out, "dossier.json"), dossier);
+console.log("wrote " + join(out, "dossier.json") + " (" + dossier.length + " bytes)");
