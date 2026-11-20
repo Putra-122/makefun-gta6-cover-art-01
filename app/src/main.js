@@ -1,114 +1,229 @@
-// Neon Coast editor UI — wires the controls to the cover engine.
-// Offline: the photo is read locally (FileReader / sample files), never sent.
-import { loadImage, renderCover, GRADES } from './cover.js';
+// Neon Coast Cover Studio — editor wiring.
+//
+// Owns the page state (photos, caption, layout, grade, export size),
+// renders the live preview through the cover engine, and exports the
+// finished cover as a PNG. Photos are read on this machine only
+// (FileReader / data URLs) and are never uploaded anywhere.
 
-const stage = document.getElementById('stage');
-const state = {
-  img: null,
-  caption: 'SUNSET HEIST',
-  subtitle: 'welcome to vice city',
-  layout: 'grid',
-  grade: 'sunset',
-  size: '1080x1080',
-};
+import { GRADES, LAYOUTS, SIZES, renderCover } from './cover.js';
 
-const SAMPLES = ['samples/pier.jpg', 'samples/boulevard.jpg'];
+const $ = (id) => document.getElementById(id);
 
-function draw() {
-  const [w, h] = state.size.split('x').map(Number);
-  if (stage.width !== w || stage.height !== h) {
-    stage.width = w;
-    stage.height = h;
-  }
-  renderCover(stage, state);
-}
-
-function note(msg) {
-  document.getElementById('export-note').textContent = msg;
-}
-
-async function setPhoto(src, label) {
-  try {
-    state.img = await loadImage(src);
-    draw();
-    note(label ? `Photo loaded: ${label}` : 'Photo loaded.');
-  } catch {
-    note('Could not load that photo — try another file.');
-  }
-}
-
-function bindPills(id, key) {
-  const root = document.getElementById(id);
-  root.addEventListener('click', (e) => {
-    const btn = e.target.closest('button[data-' + key + ']');
-    if (!btn) return;
-    root.querySelectorAll('button').forEach((b) => b.classList.remove('on'));
-    btn.classList.add('on');
-    state[key] = btn.dataset[key];
-    draw();
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error(`cannot load ${src}`));
+    img.src = src;
   });
 }
 
-bindPills('layouts', 'layout');
-bindPills('grades', 'grade');
-bindPills('sizes', 'size');
+async function waitForFonts() {
+  try {
+    await Promise.all([
+      document.fonts.load('900 100px "NeonCoast Black"'),
+      document.fonts.load('700 40px "NeonCoast Bold"'),
+      document.fonts.load('400 40px "NeonCoast"'),
+    ]);
+    await document.fonts.ready;
+  } catch {
+    // Fallback fonts still render; the cover never blocks on fonts.
+  }
+}
 
-document.getElementById('caption').addEventListener('input', (e) => {
-  state.caption = e.target.value || 'UNTITLED';
-  draw();
-});
-document.getElementById('subtitle').addEventListener('input', (e) => {
-  state.subtitle = e.target.value;
-  draw();
-});
+export async function startEditor(query) {
+  const state = {
+    images: [null, null, null, null],
+    caption: query.get('caption') || 'SUNSET HEIST',
+    subtitle: query.get('subtitle') || 'Leonida Nights',
+    layout: LAYOUTS.some((l) => l.id === query.get('layout')) ? query.get('layout') : 'grid',
+    grade: GRADES.some((g) => g.id === query.get('grade')) ? query.get('grade') : 'sunset',
+    size: SIZES.find((s) => s.id === query.get('size')) || SIZES[0],
+  };
 
-const drop = document.getElementById('drop');
-const fileInput = document.getElementById('file');
-drop.addEventListener('click', () => fileInput.click());
-fileInput.addEventListener('change', () => {
-  const file = fileInput.files && fileInput.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => setPhoto(reader.result, file.name);
-  reader.readAsDataURL(file);
-});
-['dragover', 'dragenter'].forEach((ev) => drop.addEventListener(ev, (e) => {
-  e.preventDefault();
-  drop.classList.add('drag');
-}));
-['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => {
-  e.preventDefault();
-  drop.classList.remove('drag');
-}));
-drop.addEventListener('drop', (e) => {
-  const file = e.dataTransfer.files && e.dataTransfer.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => setPhoto(reader.result, file.name);
-  reader.readAsDataURL(file);
-});
+  // Build the option buttons from the engine's own tables, so the UI
+  // can never drift out of sync with what the engine supports.
+  const layoutBox = $('layout-options');
+  for (const layout of LAYOUTS) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chip';
+    btn.textContent = layout.label;
+    btn.title = layout.hint;
+    btn.dataset.value = layout.id;
+    btn.addEventListener('click', () => {
+      state.layout = layout.id;
+      refresh();
+    });
+    layoutBox.appendChild(btn);
+  }
+  const gradeBox = $('grade-options');
+  for (const grade of GRADES) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'chip';
+    btn.textContent = grade.label;
+    btn.dataset.value = grade.id;
+    btn.addEventListener('click', () => {
+      state.grade = grade.id;
+      refresh();
+    });
+    gradeBox.appendChild(btn);
+  }
+  const sizeSel = $('size-select');
+  for (const size of SIZES) {
+    const opt = document.createElement('option');
+    opt.value = size.id;
+    opt.textContent = size.label;
+    sizeSel.appendChild(opt);
+  }
+  sizeSel.value = state.size.id;
 
-document.querySelectorAll('[data-sample]').forEach((btn) => {
-  btn.addEventListener('click', () => setPhoto(btn.dataset.sample, btn.textContent.trim()));
-});
+  const preview = $('preview');
+  const meta = $('preview-meta');
 
-document.getElementById('export').addEventListener('click', () => {
-  draw();
-  stage.toBlob((blob) => {
-    if (!blob) { note('Export failed — try again.'); return; }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `gta6-cover-${state.size}.png`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    note(`Exported gta6-cover-${state.size}.png (${Math.round(blob.size / 1024)} KiB).`);
-  }, 'image/png');
-});
+  function render() {
+    renderCover(preview, {
+      images: state.images,
+      caption: state.caption,
+      subtitle: state.subtitle,
+      layout: state.layout,
+      grade: state.grade,
+      width: state.size.w,
+      height: state.size.h,
+    });
+    meta.textContent = `${state.size.w} × ${state.size.h} · ${state.layout} · ${state.grade}`;
+    for (const btn of layoutBox.children) {
+      btn.classList.toggle('active', btn.dataset.value === state.layout);
+    }
+    for (const btn of gradeBox.children) {
+      btn.classList.toggle('active', btn.dataset.value === state.grade);
+    }
+  }
 
-// Boot: load the first sample so the preview is never blank, then draw.
-document.fonts.ready.then(() => {
-  setPhoto(SAMPLES[0], 'Pier sunset (sample)');
-  draw();
-});
-draw();
+  function refresh() {
+    render();
+  }
+
+  // Caption / subtitle editing.
+  const captionInput = $('caption-input');
+  const subtitleInput = $('subtitle-input');
+  captionInput.value = state.caption;
+  subtitleInput.value = state.subtitle;
+  captionInput.addEventListener('input', () => {
+    state.caption = captionInput.value.trim() || 'UNTITLED';
+    render();
+  });
+  subtitleInput.addEventListener('input', () => {
+    state.subtitle = subtitleInput.value.trim();
+    render();
+  });
+
+  sizeSel.addEventListener('change', () => {
+    state.size = SIZES.find((s) => s.id === sizeSel.value) || SIZES[0];
+    render();
+  });
+
+  // Photo slots: four thumbnails; clicking one arms it for replacement.
+  const slotsBox = $('photo-slots');
+  let armedSlot = 0;
+  const slotEls = [];
+  for (let i = 0; i < 4; i++) {
+    const slot = document.createElement('button');
+    slot.type = 'button';
+    slot.className = 'slot';
+    slot.textContent = `Panel ${i + 1}`;
+    slot.addEventListener('click', () => {
+      armedSlot = i;
+      paintSlots();
+      $('file-input').click();
+    });
+    slotsBox.appendChild(slot);
+    slotEls.push(slot);
+  }
+  function paintSlots() {
+    slotEls.forEach((el, i) => {
+      el.classList.toggle('armed', i === armedSlot);
+      el.classList.toggle('filled', !!state.images[i]);
+      if (state.images[i]) {
+        el.style.backgroundImage = `url(${state.images[i].src})`;
+        el.textContent = '';
+      } else {
+        el.style.backgroundImage = '';
+        el.textContent = `Panel ${i + 1}`;
+      }
+    });
+  }
+
+  $('file-input').addEventListener('change', async (event) => {
+    const files = [...event.target.files].slice(0, 4);
+    for (const file of files) {
+      const dataUrl = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.readAsDataURL(file);
+      });
+      try {
+        state.images[armedSlot] = await loadImage(dataUrl);
+        armedSlot = (armedSlot + 1) % 4;
+      } catch {
+        // A file that is not an image is skipped, the rest still load.
+      }
+    }
+    event.target.value = '';
+    paintSlots();
+    render();
+  });
+
+  $('sample-boulevard').addEventListener('click', async () => {
+    state.images[0] = await loadImage('samples/boulevard.jpg');
+    paintSlots();
+    render();
+  });
+  $('sample-pier').addEventListener('click', async () => {
+    state.images[0] = await loadImage('samples/pier.jpg');
+    paintSlots();
+    render();
+  });
+  $('clear-photos').addEventListener('click', () => {
+    state.images = [null, null, null, null];
+    paintSlots();
+    render();
+  });
+
+  // Export: render offscreen at the chosen size, download the PNG.
+  $('export-btn').addEventListener('click', () => {
+    const off = document.createElement('canvas');
+    renderCover(off, {
+      images: state.images,
+      caption: state.caption,
+      subtitle: state.subtitle,
+      layout: state.layout,
+      grade: state.grade,
+      width: state.size.w,
+      height: state.size.h,
+    });
+    off.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `neon-coast-cover-${state.size.w}x${state.size.h}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }, 'image/png');
+  });
+
+  // Preset photo for screenshot scenes (?photo=boulevard|pier).
+  await waitForFonts();
+  const preset = query.get('photo');
+  if (preset === 'boulevard' || preset === 'pier') {
+    try {
+      state.images[0] = await loadImage(`samples/${preset}.jpg`);
+    } catch {
+      // No photo: the procedural scene covers for it.
+    }
+  }
+  paintSlots();
+  render();
+}
